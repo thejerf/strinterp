@@ -51,7 +51,7 @@ func (ae AlreadyExists) Error() string {
 	return "The format string " + string(ae) + " is already declared"
 }
 
-// UnknownFormat is the error that will be returned by the interpolator
+// UnknownFormatter is the error that will be returned by the interpolator
 // when it encounters a format string it doesn't understand.
 type UnknownFormatter string
 
