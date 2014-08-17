@@ -41,22 +41,22 @@ var ErrIncompleteFormatString = errors.New("incomplete format string (no semi-co
 // it doesn't understand.
 var ErrRawUnknownType = errors.New("type is unknown to the raw encoder")
 
-// AlreadyExists is the error that is returned when you attempt to register
+// ErrAlreadyExists is the error that is returned when you attempt to register
 // a given format string when it has already been registered.
-type AlreadyExists string
+type ErrAlreadyExists string
 
-// Error implements the Error interface on the AlreadyExists error.
-func (ae AlreadyExists) Error() string {
+// Error implements the Error interface on the ErrAlreadyExists error.
+func (ae ErrAlreadyExists) Error() string {
 	// FIXME: need to use the interpolator
 	return "The format string " + string(ae) + " is already declared"
 }
 
-// UnknownFormatter is the error that will be returned by the interpolator
+// ErrUnknownFormatter is the error that will be returned by the interpolator
 // when it encounters a format string it doesn't understand.
-type UnknownFormatter string
+type ErrUnknownFormatter string
 
 // Error implements the Error interface on the UnknownFormat error.
-func (uf UnknownFormatter) Error() string {
+func (uf ErrUnknownFormatter) Error() string {
 	// FIXME: Use the interpolator
 	return "format string specified unknown formatter " + string(uf)
 }
@@ -82,8 +82,6 @@ type Interpolator struct {
 //    "%": Magical, and yields a literal % without consuming an arg
 //    "RAW": interpolates the given string, []byte, or io.Reader directly
 //      (if an io.Reader, io.Copy is used)
-//    single letters matching fmt formats, excepting this library uses the
-//      colon standard for passing the numbers for things like %f
 //
 // As a bonus observation, note how this interpolator is also potentially
 // useful for streaming in a way your average string interpolator is
@@ -98,7 +96,7 @@ func NewInterpolator() *Interpolator {
 // AddFormat adds a interpolation format to the interpolator.
 func (i *Interpolator) AddFormat(format string, handler Formatter) error {
 	if i.interpolators[format] != nil {
-		return AlreadyExists(format)
+		return ErrAlreadyExists(format)
 	}
 
 	i.interpolators[format] = handler
@@ -124,8 +122,8 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 		untilDelim, err := buf.ReadBytes(37) // 37 = %
 		if err == io.EOF {
 			// FIXME: Real code ought to do something with remaining args
-			w.Write(untilDelim)
-			return nil
+			_, err = w.Write(untilDelim)
+			return err
 		}
 
 		// pop off the trailing %
@@ -151,11 +149,14 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 
 		// implement the special % escaper
 		if len(format) == 1 && format[0] == 37 {
-			w.Write([]byte{37})
+			_, err = w.Write([]byte{37})
+			if err != nil {
+				return err
+			}
 		} else {
 			formatter := i.interpolators[format]
 			if formatter == nil {
-				return UnknownFormatter(string(format))
+				return ErrUnknownFormatter(string(format))
 			}
 
 			if len(args) > 0 {
@@ -167,7 +168,10 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 					return err
 				}
 			} else {
-				w.Write([]byte("%" + string(format) + " error: No arg;"))
+				_, err = w.Write([]byte("%" + string(format) + " error: No arg;"))
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
