@@ -1,4 +1,4 @@
-package stresc_test
+package stresc
 
 import (
 	"bytes"
@@ -8,8 +8,6 @@ import (
 	"io"
 	"reflect"
 	"testing"
-
-	"github.com/thejerf/stresc"
 )
 
 type StrescTest struct {
@@ -29,13 +27,13 @@ func TestDefaultInterpolator(t *testing.T) {
 		{"x%RAW;", []interface{}{[]byte("y")}, "xy", nil},
 		{"x%RAW;", []interface{}{bytes.NewBuffer([]byte("y"))}, "xy", nil},
 
-		{"x%RAW", []interface{}{"y"}, "", stresc.ErrIncompleteFormatString},
-		{"x%RAW;", []interface{}{0}, "", stresc.ErrRawUnknownType},
+		{"x%RAW", []interface{}{"y"}, "", ErrIncompleteFormatString},
+		{"x%RAW;", []interface{}{0}, "", ErrRawUnknownType},
 		{"x%RAW;", []interface{}{}, "x%RAW error: No arg;", nil},
-		{"x%blargh;", []interface{}{}, "", stresc.ErrUnknownFormatter("blargh")},
+		{"x%blargh;", []interface{}{}, "", ErrUnknownFormatter("blargh")},
 	}
 
-	i := stresc.NewInterpolator()
+	i := NewInterpolator()
 
 	for _, test := range tests {
 		res, err := i.InterpStr(test.Format, test.Args...)
@@ -53,7 +51,7 @@ func TestDefaultInterpolator(t *testing.T) {
 }
 
 func TestOtherInterpolators(t *testing.T) {
-	i := stresc.NewInterpolator()
+	i := NewInterpolator()
 
 	err := i.AddFormat("cdata", func(w io.Writer, arg interface{}, params []byte) error {
 		switch a := arg.(type) {
@@ -75,7 +73,7 @@ func TestOtherInterpolators(t *testing.T) {
 	}
 
 	err = i.AddFormat("cdata", func(io.Writer, interface{}, []byte) error { return nil })
-	if !reflect.DeepEqual(err, stresc.ErrAlreadyExists("cdata")) {
+	if !reflect.DeepEqual(err, ErrAlreadyExists("cdata")) {
 		t.Fatal("fails to catch double-type add")
 	}
 
@@ -90,7 +88,7 @@ func TestOtherInterpolators(t *testing.T) {
 }
 
 func TestWriterErrors(t *testing.T) {
-	i := stresc.NewInterpolator()
+	i := NewInterpolator()
 
 	err := i.InterpWriter(WriterAlwaysEOF{}, []byte("x"))
 	if err != io.EOF {
@@ -114,7 +112,7 @@ func TestWriterErrors(t *testing.T) {
 }
 
 func TestParameters(t *testing.T) {
-	i := stresc.NewInterpolator()
+	i := NewInterpolator()
 
 	i.AddFormat("p", func(w io.Writer, arg interface{}, params []byte) error {
 		w.Write(params)
@@ -131,8 +129,38 @@ func TestParameters(t *testing.T) {
 func TestCover(t *testing.T) {
 	// assert these don't crash
 
-	stresc.ErrAlreadyExists("x").Error()
-	stresc.ErrUnknownFormatter("x").Error()
+	ErrAlreadyExists("x").Error()
+	ErrUnknownFormatter("x").Error()
+}
+
+type readBytesTest struct {
+	input string
+	delim string
+	expected string
+	error error
+}
+
+func TestReadBytesUntilUnesc(t *testing.T) {
+	tests := []readBytesTest{
+		{"abc", "c", "ab", nil},
+		{"abc", "d", "abc", io.EOF},
+		{`a\bc`, "c", "ab", nil},
+		{`a\\bc`, "c", `a\b`, nil},
+		{`abc\`, "d", `abc`, nil},
+	}
+
+	for _, test := range tests {
+		res, err := readBytesUntilUnescDelim(
+			bytes.NewBuffer([]byte(test.input)),
+			[]byte(test.delim)[0],
+		)
+		if test.error != nil && !reflect.DeepEqual(test.error, err) {
+			t.Fatal("Failed: wrong error on " + test.input)
+		}
+		if res != nil && string(res) != test.expected {
+			t.Fatal("Failed: wrong result on " + test.input)
+		}
+	}
 }
 
 type WriterAlwaysEOF struct{}

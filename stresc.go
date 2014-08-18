@@ -28,6 +28,8 @@ import (
 // something like a MustInterpolateSuccessfully; both behaviors have their
 // place and really shouldn't be casually mixed the way the fmt library
 // does.)
+//
+// If the Formatter can handle a []byte, it can also be used as a filter.
 type Formatter func(io.Writer, interface{}, []byte) error
 
 // ErrNotGiven is returned if a formatter is given without a value.
@@ -119,26 +121,23 @@ func (i *Interpolator) InterpStr(format string, args ...interface{}) (string, er
 func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...interface{}) error {
 	buf := bytes.NewBuffer(formatBytes)
 	for {
-		untilDelim, err := buf.ReadBytes(37) // 37 = %
+		untilDelim, err := readBytesUntilUnescDelim(buf, 37) // 37 = %
 		if err == io.EOF {
-			// FIXME: Real code ought to do something with remaining args
+			// FIXME: Real code ought to do something with remaining unused
+			// args
 			_, err = w.Write(untilDelim)
 			return err
 		}
 
-		// pop off the trailing %
-		untilDelim = untilDelim[0 : len(untilDelim)-1]
 		_, err = w.Write(untilDelim)
 		if err != nil {
 			return err
 		}
 
-		rawFormat, err := buf.ReadBytes(59) // 59 = ;
+		rawFormat, err := readBytesUntilUnescDelim(buf, 59) // 59 = ;
 		if err == io.EOF {
 			return ErrIncompleteFormatString
 		}
-		// eliminate the trailing ;
-		rawFormat = rawFormat[:len(rawFormat)-1]
 
 		formatChunks := bytes.SplitN(rawFormat, []byte(":"), 2)
 		format := string(formatChunks[0])
@@ -190,5 +189,41 @@ func raw(w io.Writer, x interface{}, args []byte) error {
 		return err
 	default:
 		return ErrRawUnknownType
+	}
+}
+
+// like bytes.ReadBytes, except it goes until the target byte is found not
+// preceded by a \, and eliminates the backslashes out of the result.
+//
+// This is basically the simplest possible correct form of backslash
+// escaping. If it seems like overkill, bear in mind it is very simple and
+// easy to understand, and a lot of the "corrections" that leap to people's
+// minds are actually very complicated to implement *correctly*.
+//
+// In particular, we throw away a backslash if it is the last character,
+// just so we don't end up with a corner case where a single backslash
+// survives.
+//
+// This does not return the delimiter.
+func readBytesUntilUnescDelim(buf *bytes.Buffer, delim byte) ([]byte, error) {
+	result := []byte{}
+
+	for {
+		b, err := buf.ReadByte()
+		if err != nil {
+			return result, err
+		}
+
+		if b == 92 { // the backslash tells us to blindly read in the next byte
+			b, err = buf.ReadByte()
+			if err != nil {
+				return result, err
+			}
+			result = append(result, b)
+		} else if b == delim {
+			return result, nil
+		} else {
+			result = append(result, b)
+		}
 	}
 }
