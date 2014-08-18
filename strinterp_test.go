@@ -1,4 +1,4 @@
-package stresc
+package strinterp
 
 import (
 	"bytes"

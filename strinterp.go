@@ -1,4 +1,64 @@
-package stresc
+/*
+
+Package strinterp provides a demonstration of morally correct string
+interpolation.
+
+This package is created in support of a blog post. It's the result of about
+4 hours of screwing around. But it does what it does, and I could not bear
+the thought of putting anything up on GitHub without full test coverage, so
+if you feel you are interested in using it, it's not necessarily a bad
+idea... I'd just suggest going into it knowing that you're probably going
+to want to create a few pull requests.
+
+It may well be the only "string interpolator" that can use io.Writers
+for streaming... though this ought to be propogated even more deeply than
+it has. Mail me if you're interested.
+
+Using String Interpolators
+
+To use this package, create an interpolator object:
+
+    i := strinterp.NewInterpolator()
+
+Add any additional interpolators you may wish. For instance, assuming you
+import the html package, here's how to add a "HTML CDATA" interpolator:
+
+	err := i.AddFormat("cdata", func(w io.Writer, arg interface{}, params []byte) error {
+		switch a := arg.(type) {
+		case []byte:
+			newBytes := []byte(html.EscapeString(string(a)))
+			_, err := w.Write(newBytes)
+			return err
+		case string:
+			newBytes := []byte(html.EscapeString(a))
+			_, err := w.Write(newBytes)
+			return err
+		default:
+			return errors.New("unknown type for cdata")
+		}
+	})
+
+And interpolate strings:
+
+    s, err := i.InterpStr("hello %cdata;", "<world>")
+    // yields "hello &lt;world&gt;"
+
+The format is percent sign, the identifier of the interpolator, an optional
+colon followed by any additional parameters for the interpolator, and
+a semicolon. Colon and semicolon can be backslash-escaped to avoid their
+active meanings (in which case backtick strings may be more useful). The
+optional parameters are passed to the interpolation function as the
+"params"; it is entirely up to the function to determine what they mean.
+
+Features:
+
+ * use of streams should be more deeply propagated
+ * InterpStr probably can lose its "error" return
+ * profile and performance review
+ * it would be useful to be able to chain formatters, as mentioned in blog postxs
+
+*/
+package strinterp
 
 import (
 	"bytes"
@@ -96,6 +156,8 @@ func NewInterpolator() *Interpolator {
 }
 
 // AddFormat adds a interpolation format to the interpolator.
+//
+// The only error that can result is a ErrAlreadyExists object.
 func (i *Interpolator) AddFormat(format string, handler Formatter) error {
 	if i.interpolators[format] != nil {
 		return ErrAlreadyExists(format)
