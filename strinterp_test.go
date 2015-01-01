@@ -134,10 +134,10 @@ func TestCover(t *testing.T) {
 }
 
 type readBytesTest struct {
-	input string
-	delim string
+	input    string
+	delim    string
 	expected string
-	error error
+	error    error
 }
 
 func TestReadBytesUntilUnesc(t *testing.T) {
@@ -170,4 +170,39 @@ func (wae WriterAlwaysEOF) Write(b []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 	return 0, nil
+}
+
+// The purpose of this code is to test whether it is faster to try to
+// "memoize" the resolution of the interface method, or if that doesn't
+// save any time.
+//
+// Surprisingly to me, as of Go 1.4, calling straight through the interface
+// doesn't just *tie* the "memoized" version, it is *faster* than it. I
+// could easily see this changing in future versions, though.
+type Blank interface {
+	Nothing()
+}
+
+type B struct{}
+
+func (b B) Nothing() {}
+
+func BenchmarkCallThroughInterface(b *testing.B) {
+	var instance Blank
+	instance = B{}
+
+	for i := 0; i < b.N; i++ {
+		instance.Nothing()
+	}
+}
+
+func BenchmarkMemoizedInterfaceCall(b *testing.B) {
+	var instance Blank
+	instance = B{}
+
+	nothing := instance.Nothing
+
+	for i := 0; i < b.N; i++ {
+		nothing()
+	}
 }
