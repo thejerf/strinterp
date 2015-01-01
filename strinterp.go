@@ -3,8 +3,13 @@
 Package strinterp provides a demonstration of morally correct string
 interpolation.
 
+"Morally" correct means that it may not be any other kind of correct,
+including "free of bugs", "fast", or "useful". But this package does
+offer you the opportunity to feel warm, fuzzy feelings for using it.
+And how many packages offer you that?
+
 This package is created in support of a blog post. It's the result of about
-4 hours of screwing around. But it does what it does, and I could not bear
+8 hours of screwing around. But it does what it does, and I could not bear
 the thought of putting anything up on GitHub without full test coverage, so
 if you feel you are interested in using it, it's not necessarily a bad
 idea... I'd just suggest going into it knowing that you're probably going
@@ -57,13 +62,38 @@ Features:
  * profile and performance review
  * it would be useful to be able to chain formatters, as mentioned in blog postxs
 
+Security Note
+
+This is true of all string interpolators, but even more so of
+strinterp. You MUST NOT feed user input as the interpolation source
+string. In fact I'd suggest that one could make a good case that the first
+parameter to strinterp should always be a constant string in the source
+code base, and if I were going to write a local validation routine to plug
+into go vet or something I'd probably add that as a rule.
+
+Again, let me emphasize, this is NOT special to strinterp. You shouldn't
+let users feed into the first parameter of fmt.Sprintf, or any other such
+string, in any language for that matter. It's possible some are "safe" to
+do that in, but given the wide range of havoc done over the years by
+letting users control interpolation strings, I would just recommend against
+it unconditionally.
+
+Care should also be taken in the construction of filters. If they get much
+"smarter" than a for loop iterating over runes and doing "something" with
+them, you're starting to ask for trouble if user input passes through
+them. Generally the entire point of strinterp is to handle potentially
+untrusted input in a safe manner, so if you start "interpreting" user input
+you could be creating openings for attackers.
+
 */
 package strinterp
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io"
+	"strconv"
 )
 
 // A Formatter is a function that does formatting.
@@ -288,4 +318,159 @@ func readBytesUntilUnescDelim(buf *bytes.Buffer, delim byte) ([]byte, error) {
 			result = append(result, b)
 		}
 	}
+}
+
+// A RuneWriter is very much like a Writer, except with the guarantee that
+// the written []byte will only break along legal boundaries for Runes,
+// that is, it is guaranteed not to write a *partial* UTF-8
+// character. RuneWriters are permitted to return errors if a partial UTF-8
+// character is encountered, or may replace it with the "Unicode
+// replacement character", as it sees fit.
+//
+// This allows the easy implementation of stateless transformers, and
+// simplifies implementations of stateful transformers.
+//
+// RuneWriters must also be guaranteed to process the full []byte string
+// passed to them, so we skip the return bit that reports the length of the
+// written bytes.
+//
+// FIXME: Benchmark this to see if there is a significant difference
+// between for loops that WriteRunes one at a time vs. ones that collect as
+// much as they can that is legal before they WriteRunes.
+type RuneWriter interface {
+	WriteRunes([]rune) (err error)
+}
+
+var ErrIncompleteRune = errors.New("incomplete rune passed to RuneWriter")
+
+type RuneWriterFunc func([]rune) (err error)
+
+func (rwf RuneWriterFunc) WriteRunes(r []rune) (err error) {
+	return rwf(r)
+}
+
+var lt = []rune{'&', 'l', 't', ';'}
+var gt = []rune{'&', 'g', 't', ';'}
+var cr = []rune{'&', '#', '1', '0', ';'}
+var lf = []rune{'&', '#', '1', '3', ';'}
+var quot = []rune{'&', 'q', 'u', 'o', 't', ';'}
+var apos = []rune{'&', 'a', 'p', 'o', 's', ';'}
+
+// bufioRuneWriters converts from the RuneWriter stream of runes into an
+// io.Writer, via a bufio.Writer for buffering so we don't hammer the
+// Writer on the other end.
+type bufioRuneWriter struct {
+	*bufio.Writer
+}
+
+func (brw bufioRuneWriter) WriteRunes(runes []rune) (err error) {
+	for _, r := range runes {
+		_, err = brw.WriteRune(r)
+		if err != nil {
+			return err
+		}
+	}
+	return err
+}
+
+// byteBufferRuneWriter converts from the RuneWriter stream of runes into a
+// bytes.Buffer, suitable for conversion to a string once collected.
+type byteBufferRuneWriter struct {
+	*bytes.Buffer
+}
+
+func (bbrw byteBufferRuneWriter) WriteRunes(runes []rune) (err error) {
+	for _, r := range runes {
+		// per documentation on bytes.WriteRune, this will never return an
+		// err; it just matches bufio.Writer's WriteRune signature.
+		_, _ = bbrw.WriteRune(r)
+	}
+	return nil
+}
+
+// In theory, CDATA is just "character data", with bits occasionally carved
+// out for things like attributes. In reality, there has historically been
+// a lot of fuzzy edge cases around newlines in attributes and such. In
+// principle, a single encoding function could be defined that would handle
+// all of these cases, but as that encoding function would then be forced
+// to turn newlines into character entities, the resulting HTML would be
+// quite ugly. Therefore, despite the fact it is theoretically possible to
+// produce one encoding function for all HTML CDATA that simply
+// conservatively encodes all controversial characters, in practice you
+// want at least two, one for HTML text that leaves newlines alone, and one
+// for attributes.
+//
+// Also the official rules have changed over the years, plus the browsers
+// have chewed these up, so this is quite conservative. It converts both
+// angle brackets and all control characters except CR and LF.
+func encodeHTMLAttribute(inner RuneWriter) RuneWriter {
+	return RuneWriterFunc(func(runes []rune) (err error) {
+		goodfrom := 0
+
+		for idx, r := range runes {
+			// "below 32" is a control char
+			if r <= '>' &&
+				((r == '<' || r == '>') || (r < ' ' && r != '\n' && r != '\r')) {
+				// this character is bad, needs encoding
+
+				// emit anything good that we have
+				if goodfrom != idx {
+					err = inner.WriteRunes(runes[goodfrom:idx])
+					goodfrom = idx + 1
+				}
+
+				// emit the properly-encoded value
+				switch r {
+				case '<':
+					err = inner.WriteRunes(lt)
+				case '>':
+					err = inner.WriteRunes(gt)
+				case '\n':
+					err = inner.WriteRunes(lf)
+				case '\r':
+					err = inner.WriteRunes(cr)
+				default:
+					// this could be made more efficient with even nastier
+					// code, probably
+					// if this seems hypocritical, because I am here
+					// concatenating strings, bear in mind that it's not a
+					// great idea to implement strinterp in terms of
+					// itself, both for performance reasons and for code
+					// sanity reasons, and this is, after all, the language
+					// primitive that is supported by the core
+					// environment. So it's legal to wrap this
+					// functionality safely (note how easy it is to
+					// characterize the nature of the output of FormatInt
+					// here, for instance, as opposed to uncontrolled
+					// string concatenation). This is like how in any
+					// "safe" environment you can never really get away
+					// from "unsafe" code; it is a matter of confining it
+					// and minimizing it, rather than trying to write
+					// entirely "safely". In the string interpolators
+					// themselves, you have license to *carefully* write
+					// the unsafe code if you need to, vet it once, and
+					// forget about it after that.
+					num := "&#" + strconv.FormatInt(int64(r), 10) + ";"
+					err = inner.WriteRunes(bytes.Runes([]byte(num)))
+				}
+
+				if err != nil {
+					return
+				}
+			}
+		}
+
+		runecount := len(runes)
+		if goodfrom < runecount-1 {
+			err = inner.WriteRunes(runes[goodfrom:runecount])
+		}
+
+		return
+	})
+}
+
+func encodeHTMLCDATA(inner RuneWriter) RuneWriter {
+	return RuneWriterFunc(func(runes []rune) (err error) {
+		return err
+	})
 }
