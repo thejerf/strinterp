@@ -2,15 +2,13 @@ package strinterp
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
-	"html"
 	"io"
 	"reflect"
 	"testing"
 )
 
-type StrescTest struct {
+type StrinterpTest struct {
 	Format string
 	Args   []interface{}
 	Result string
@@ -20,7 +18,7 @@ type StrescTest struct {
 func TestDefaultInterpolator(t *testing.T) {
 	noargs := []interface{}{}
 
-	tests := []StrescTest{
+	tests := []StrinterpTest{
 		{"x", noargs, "x", nil},
 		{"x%%;y", []interface{}{}, "x%y", nil},
 		{"x%RAW;", []interface{}{"y"}, "xy", nil},
@@ -28,8 +26,8 @@ func TestDefaultInterpolator(t *testing.T) {
 		{"x%RAW;", []interface{}{bytes.NewBuffer([]byte("y"))}, "xy", nil},
 
 		{"x%RAW", []interface{}{"y"}, "", ErrIncompleteFormatString},
-		{"x%RAW;", []interface{}{0}, "", ErrRawUnknownType},
-		{"x%RAW;", []interface{}{}, "x%RAW error: No arg;", nil},
+		{"x%RAW;", []interface{}{0}, "", ErrNoDefaultHandling},
+		{"x%RAW;", []interface{}{}, "", ErrNotGiven},
 		{"x%blargh;", []interface{}{}, "", ErrUnknownFormatter("blargh")},
 	}
 
@@ -42,48 +40,11 @@ func TestDefaultInterpolator(t *testing.T) {
 			// note in this case we aren't being hypocritcal... having just
 			// established this package's interpolation is actually broken,
 			// don't try to use it to output an error message!
-			t.Fatal(fmt.Sprintf("for %s, expected error %v, got %v", test.Format, test.Error, err))
+			t.Fatal(fmt.Sprintf("for %s, expected error '%v', got '%v'", test.Format, test.Error, err))
 		}
 		if test.Result != "" && test.Result != res {
 			t.Fatal(fmt.Sprintf("for %s, expected result '%s', got '%s'", test.Format, test.Result, res))
 		}
-	}
-}
-
-func TestOtherInterpolators(t *testing.T) {
-	i := NewInterpolator()
-
-	err := i.AddFormat("cdata", func(w io.Writer, arg interface{}, params []byte) error {
-		switch a := arg.(type) {
-		case []byte:
-			newBytes := []byte(html.EscapeString(string(a)))
-			_, err := w.Write(newBytes)
-			return err
-		case string:
-			newBytes := []byte(html.EscapeString(a))
-			_, err := w.Write(newBytes)
-			return err
-		default:
-			return errors.New("unknown type for cdata")
-		}
-	})
-
-	if err != nil {
-		t.Fatal("Can't add new format?")
-	}
-
-	err = i.AddFormat("cdata", func(io.Writer, interface{}, []byte) error { return nil })
-	if !reflect.DeepEqual(err, ErrAlreadyExists("cdata")) {
-		t.Fatal("fails to catch double-type add")
-	}
-
-	res, err := i.InterpStr("hello %cdata;", "& stuff")
-	if err != nil {
-		t.Fatal("Error: " + err.Error())
-	}
-
-	if res != "hello &amp; stuff" {
-		t.Fatal("Didn't get correct cdata string: " + res)
 	}
 }
 
@@ -101,13 +62,13 @@ func TestWriterErrors(t *testing.T) {
 	}
 
 	err = i.InterpWriter(WriterAlwaysEOF{}, []byte("%RAW;"))
-	if err != io.EOF {
-		t.Fatal("Didn't handle error on missing params correctly")
+	if err != ErrNotGiven {
+		t.Fatal("Didn't handle error on missing params correctly:")
 	}
 
 	err = i.InterpWriter(WriterAlwaysEOF{}, []byte("%%;"))
 	if err != io.EOF {
-		t.Fatal("Didn't handle error on %%; correctly")
+		t.Fatal("Didn't handle error on %%; correctly", err)
 	}
 }
 
