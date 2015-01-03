@@ -79,10 +79,10 @@ func NewDefaultInterpolator() *Interpolator {
 	}
 }
 
-// AddFormat adds a interpolation format to the interpolator.
+// AddFormatter adds a interpolation format to the interpolator.
 //
 // The only error that can result is a ErrAlreadyExists object.
-func (i *Interpolator) AddFormat(format string, handler Formatter) error {
+func (i *Interpolator) AddFormatter(format string, handler Formatter) error {
 	if i.formatters[format] != nil {
 		return ErrAlreadyExists(format)
 	}
@@ -199,9 +199,12 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 
 		if formatter != nil {
 			err = formatter(writer, thisArg, formatArgs)
-			writer.Close()
+			err2 := writer.Close()
 			if err != nil {
 				return err
+			}
+			if err2 != nil {
+				return err2
 			}
 		}
 		if encoder != nil {
@@ -210,9 +213,12 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 				return err
 			}
 			err = i.writeArgument(thisArg, writer)
-			writer.Close()
+			err2 := writer.Close()
 			if err != nil {
 				return err
+			}
+			if err2 != nil {
+				return err2
 			}
 		}
 	}

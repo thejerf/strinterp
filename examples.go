@@ -63,108 +63,14 @@ func Base64(w io.Writer, args []byte) (io.Writer, error) {
 	return wc, nil
 }
 
-// Now we start getting into the seriously non-trivial. encoding/json has a
-// lot of options, but a careful examination of its API reveals a lot of
-// its options are all over the board. For instance, the JSON can be made
-// URL-safe,but this has a hard-coded dependency on outputting to a
-// bytes.Buffer. As that is a critical use case of this system, we have to
-// be able to support that. Less critically, indenting can only be obtained
-// into either []byte or a bytes.Buffer, so we drop that functionality here.
-//
-// Per the design philosophy expressed in the original blog post: Given
-// that HTML-proofing a JSON file still results in a valid JSON file at the
-// end of the process, we will *default* to it being on, and *permit*
-// people to deliberately turn it off. Thus, we default to the
-// slower-but-safer options, and allow people who really need speed to turn
-// *off* the safety, rather than asking people to turn it *on*.
-
 // JSON defineds a formatter that uses the standard encoding/json module to
 // output JSON.
-//
-// By default, the JSON formatter will output HTML-safe JSON. However,
-// since this must be implemented as an additional filter, this can be
-// slower than outputting HTML-unsafe JSON. So the JSON formatter takes as
-// an optional parameter "nohtml", which if present will not use the
-// HTML-safing filtering. Any other argument results in an
-// ErrUnknownArguments.
 func JSON(w io.Writer, val interface{}, params []byte) error {
-	// unless we explicitly ask to bypass the HTML-safing, use HTML-safing
-	if params != nil {
-		if string(params) == "nohtml" {
-			// by construction, htmlSafeJSON never errors
-			w, _ = htmlSafeJSON(w, nil)
-		} else {
-			return ErrUnknownArguments{params, "only nohtml is valid"}
-		}
-	}
-
 	e := json.NewEncoder(w)
 	return e.Encode(val)
 }
 
 var hex = "0123456789abcdef"
-
-// This parallels the standard library json.HTMLEscape, which is a polite
-// way of saying "I copied and pasted that", except we have to do it as a
-// Writer filter instead of a Buffer. This takes no args. This depends on
-// the promise that we will not split Unicode characters.
-//
-// It does happen to double as a good example of a down & dirty
-// byte-munging encoding function. In this case, for didactic purposes
-// it matches the Encoder function signature, even though it is never
-// used by anything except directly in the JSON function above.
-//
-// Notice the pattern in use here where we accumulate as much "good stuff"
-// as possible before calling down to the inner Writer; I haven't
-// benchmarked this, but the fact the core library does it is probably a
-// clue. Given that an io.Write call through an interface is a great deal
-// more expensive than examining one more character and deciding it's still
-// good, it's very likely that trying to call a Write on every byte would
-// become very slow, very quickly.
-func htmlSafeJSON(w io.Writer, args []byte) (io.Writer, error) {
-	return WriterFunc(func(src []byte) (int, error) {
-		// This code copyright 2012 The Go Authors, modified under license
-		// by Jeremy Bowers. See LICENSE.
-		start := 0
-
-		for i, c := range src {
-			if c == '<' || c == '>' || c == '&' {
-				if start < i {
-					_, err := w.Write(src[start:i])
-					if err != nil {
-						return 0, err
-					}
-				}
-				_, err := w.Write([]byte{'\\', 'u', '0', '0', hex[c>>4], hex[c&0xF]})
-				if err != nil {
-					return 0, err
-				}
-				start = i + 1
-			}
-			// Convert U+2028 and U+2029 (E2 80 A8 and E2 80 A9).
-			if c == 0xE2 && i+2 < len(src) && src[i+1] == 0x80 && src[i+2]&^1 == 0xA8 {
-				if start < i {
-					_, err := w.Write(src[start:i])
-					if err != nil {
-						return 0, err
-					}
-				}
-				_, err := w.Write([]byte{'\\', 'u', '2', '0', '2', hex[src[i+2]&0xF]})
-				if err != nil {
-					return 0, err
-				}
-				start = i + 3
-			}
-		}
-		if start < len(src) {
-			_, err := w.Write(src[start:])
-			if err != nil {
-				return 0, err
-			}
-		}
-		return len(src), nil
-	}), nil
-}
 
 var lt = []byte("&lt;")
 var gt = []byte("&gt;")
@@ -203,8 +109,8 @@ func CDATA(inner io.Writer, args []byte) (io.Writer, error) {
 				(b < ' ' && (encodeCRLF || (b != '\n' && b != '\r'))) {
 				if goodfrom != idx {
 					_, err = inner.Write(by[goodfrom:idx])
-					goodfrom = idx + 1
 				}
+				goodfrom = idx + 1
 
 				// emit the properly-encoded value
 				switch b {
@@ -212,10 +118,6 @@ func CDATA(inner io.Writer, args []byte) (io.Writer, error) {
 					_, err = inner.Write(lt)
 				case '>':
 					_, err = inner.Write(gt)
-				case '\n':
-					_, err = inner.Write(lf)
-				case '\r':
-					_, err = inner.Write(cr)
 				default:
 					// this could be made more efficient with even nastier
 					// code, probably
@@ -248,7 +150,7 @@ func CDATA(inner io.Writer, args []byte) (io.Writer, error) {
 		}
 
 		n = len(by)
-		if goodfrom < n-1 {
+		if goodfrom <= n-1 {
 			_, err = inner.Write(by[goodfrom:n])
 		}
 
