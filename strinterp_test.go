@@ -39,11 +39,11 @@ func TestInterpolator(t *testing.T) {
 		{"x%RAW;", []interface{}{bytes.NewBuffer([]byte("y"))}, "xy", nil},
 
 		// error tests
-		{"x%RAW", []interface{}{"y"}, "", ErrIncompleteFormatString},
-		{"x%RAW;", []interface{}{0}, "", ErrNoDefaultHandling},
+		{"x%RAW", []interface{}{"y"}, "", errIncompleteFormatString},
+		{"x%RAW;", []interface{}{0}, "", errNoDefaultHandling},
 		{"x%RAW;", []interface{}{}, "", ErrNotGiven},
-		{"x%blargh;", []interface{}{}, "", ErrUnknownFormatter("blargh")},
-		{"x%RAW|blargh;", []interface{}{0}, "", ErrUnknownEncoder("blargh")},
+		{"x%blargh;", []interface{}{}, "", errUnknownFormatter("blargh")},
+		{"x%RAW|blargh;", []interface{}{0}, "", errUnknownEncoder("blargh")},
 		{"x%badform;", []interface{}{0}, "", ErrCustom},
 		{"x%RAW|badenc;", []interface{}{0}, "", ErrCustom},
 		{"x%RAW|badclose;", []interface{}{"a"}, "", ErrBadClose},
@@ -145,16 +145,16 @@ func TestParameters(t *testing.T) {
 
 func TestCover(t *testing.T) {
 	// just assert these don't crash
-	ErrAlreadyExists("x").Error()
-	ErrUnknownFormatter("x").Error()
+	errAlreadyExists("x").Error()
+	errUnknownFormatter("x").Error()
 	ErrUnknownArguments{[]byte("a"), "hello"}.Error()
-	ErrUnknownEncoder("x").Error()
+	errUnknownEncoder("x").Error()
 
 	interp := NewDefaultInterpolator()
-	if !reflect.DeepEqual(interp.AddFormatter("json", JSON), ErrAlreadyExists("json")) ||
-		!reflect.DeepEqual(interp.AddEncoder("json", Base64), ErrAlreadyExists("json")) ||
-		!reflect.DeepEqual(interp.AddFormatter("base64", JSON), ErrAlreadyExists("base64")) ||
-		!reflect.DeepEqual(interp.AddEncoder("base64", Base64), ErrAlreadyExists("base64")) {
+	if !reflect.DeepEqual(interp.AddFormatter("json", JSON), errAlreadyExists("json")) ||
+		!reflect.DeepEqual(interp.AddEncoder("json", Base64), errAlreadyExists("json")) ||
+		!reflect.DeepEqual(interp.AddFormatter("base64", JSON), errAlreadyExists("base64")) ||
+		!reflect.DeepEqual(interp.AddEncoder("base64", Base64), errAlreadyExists("base64")) {
 		t.Fatal("Can add existing formats or encoders")
 	}
 

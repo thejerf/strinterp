@@ -71,7 +71,7 @@ func (i *Interpolator) parseEncoder(formatSpec []byte) (Encoder, []byte, error) 
 
 	encoder := i.encoders[format]
 	if encoder == nil {
-		return nil, nil, ErrUnknownEncoder(format)
+		return nil, nil, errUnknownEncoder(format)
 	}
 	return encoder, formatArgs, nil
 }

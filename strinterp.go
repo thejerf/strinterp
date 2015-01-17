@@ -24,15 +24,11 @@ An Encoder is a function that takes an "inner" io.Writer and returns
 an io.Writer that wraps that writer, such that calls to the returned
 Writer will produce the desired encoding behavior. See examples.go.
 
-While this function returns an io.Writer, if the returned value also
-implements io.Closer, it will be closed at the appropriate time in
-an interpolation.
-
 In addition to conforming to the io.Writer interface, Encoders must
 also never cut up Unicode characters between calls. This technically
 means that existing io.Writer transformers *may* not conform to this
-interface, though there probably aren't that many in the wild. Encoders
-may also count on the fact that they will not receive partial Unicode
+interface, though most if not all probably do by accident. Encoders
+thus may also count on the fact that they will not receive partial Unicode
 characters, which may permit stateless Encoders to be written. This
 is facilitated with the provided WriteFunc type as well.
 
@@ -81,13 +77,13 @@ func NewDefaultInterpolator() *Interpolator {
 
 // AddFormatter adds a interpolation format to the interpolator.
 //
-// The only error that can result is a ErrAlreadyExists object.
+// If the format string is already registered, an error will be returned.
 func (i *Interpolator) AddFormatter(format string, handler Formatter) error {
 	if i.formatters[format] != nil {
-		return ErrAlreadyExists(format)
+		return errAlreadyExists(format)
 	}
 	if i.encoders[format] != nil {
-		return ErrAlreadyExists(format)
+		return errAlreadyExists(format)
 	}
 
 	i.formatters[format] = handler
@@ -96,12 +92,14 @@ func (i *Interpolator) AddFormatter(format string, handler Formatter) error {
 }
 
 // AddEncoder adds an encoder type to the interpolator.
+//
+// If the format string is already registered, an error will be returned.
 func (i *Interpolator) AddEncoder(format string, handler Encoder) error {
 	if i.formatters[format] != nil {
-		return ErrAlreadyExists(format)
+		return errAlreadyExists(format)
 	}
 	if i.encoders[format] != nil {
-		return ErrAlreadyExists(format)
+		return errAlreadyExists(format)
 	}
 
 	i.encoders[format] = handler
@@ -139,7 +137,7 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 
 		rawFormat, err := readBytesUntilUnescDelim(buf, ';')
 		if err == io.EOF {
-			return ErrIncompleteFormatString
+			return errIncompleteFormatString
 		}
 
 		// implement the special % escaper
@@ -186,7 +184,7 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 		encoder := i.encoders[format]
 
 		if formatter == nil && encoder == nil {
-			return ErrUnknownFormatter(format)
+			return errUnknownFormatter(format)
 		}
 
 		var thisArg interface{}
@@ -248,5 +246,5 @@ func (i *Interpolator) writeArgument(a interface{}, w io.Writer) error {
 		return err
 	}
 
-	return ErrNoDefaultHandling
+	return errNoDefaultHandling
 }

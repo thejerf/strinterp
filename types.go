@@ -21,9 +21,8 @@ var NotGiven = NotGivenType{}
 // A Formatter is a function that takes the argument interface{} and writes
 // the corresponding bytes to the io.Writer, based on the arguments. This
 // is generally useful for doing non-trivial transforms on arbitrary
-// objects, such as JSON-encoding them. Generally if you *can* express your
-// target transform as an Encoder rather than a Formatter, you
-// *should*. When you can't, create a Formatter.
+// objects, such as JSON-encoding them. If your argument is anything
+// other than a string, []byte, or io.Reader, you'll need a Formatter.
 //
 // The []byte is any additional parameters passed via the colon mechanism,
 // containing only those extra parameters (i.e., no colon or
@@ -34,41 +33,40 @@ var NotGiven = NotGivenType{}
 //
 // interface{} is the value. If the value was not given to the interpolator
 // at all (i.e., more format strings given than values), the value will be
-// == NotGiven.
+// == NotGiven, a singleton value used for this case.
 //
 // If the formatting could be completed successfully, the bytes should all
 // be written to the io.Writer by the time the formatter returns. If the
 // formatting could not be completed successfully, an error should be
-// returned. Since this is still ultimately a blog post rather than
-// proved production-quality library, if formatting fails, the
-// interpolation will cease, but if it was interpolating to a live stream
-// like a socket or something, could result in a half-a-stream being generated.
+// returned. In that case there are no guarantees about how much of the
+// stream may have been written, which is fundamental to a stream-style
+// library.
 type Formatter func(io.Writer, interface{}, []byte) error
 
-// ErrNotGiven is returned if a formatter is given without a value.
+// ErrNotGiven will be passed to a Formatter as the value it is encoding,
+// if the caller did not give enough arguments to the InterpStr or
+// InterpWriter calls.
+//
+// This is public so your formatter can check for it.
 var ErrNotGiven = errors.New("value not given")
 
-// ErrIncompleteFormatString is returned if the format string had a % but no
-// matching ;.
-var ErrIncompleteFormatString = errors.New("incomplete format string, no semi-colon found")
+var errIncompleteFormatString = errors.New("incomplete format string, no semi-colon found")
 
-// ErrNoDefaultHandling is returned when you pass something to an encoder
-// being used as a formatter (first element of a format string), but
-// strinterp has no default handling for that type.
-var ErrNoDefaultHandling = errors.New("no default encoder handling for type")
+var errNoDefaultHandling = errors.New("no default encoder handling for type")
 
 // ErrAlreadyExists is the error that is returned when you attempt to register
 // a given format string when it has already been registered.
-type ErrAlreadyExists string
+type errAlreadyExists string
 
 // Error implements the Error interface on the ErrAlreadyExists error.
-func (ae ErrAlreadyExists) Error() string {
+func (ae errAlreadyExists) Error() string {
 	// FIXME: need to use the interpolator
 	return "The format string " + string(ae) + " is already declared"
 }
 
 // ErrUnknownArguments is the error that is returned when you pass
-// arguments to a formatter/encoder that it doesn't understand.
+// arguments to a formatter/encoder that it doesn't understand. This is
+// public so your formatters and encoders can reuse it.
 type ErrUnknownArguments struct {
 	Arguments []byte
 	ErrorStr  string
@@ -80,19 +78,19 @@ func (ua ErrUnknownArguments) Error() string {
 
 // ErrUnknownFormatter is the error that will be returned by the interpolator
 // when it encounters a format string it doesn't understand.
-type ErrUnknownFormatter string
+type errUnknownFormatter string
 
 // Error implements the Error interface on the UnknownFormat error.
-func (uf ErrUnknownFormatter) Error() string {
+func (uf errUnknownFormatter) Error() string {
 	// FIXME: Use the interpolator
 	return "format string specified unknown formatter " + string(uf)
 }
 
 // ErrUnknownEncoder is the error that will be returned by the interpolator
 // when it encouters an encoder string it doesn't understand.
-type ErrUnknownEncoder string
+type errUnknownEncoder string
 
 // Error implements the Error interface on the UnknownEncoder error.
-func (ue ErrUnknownEncoder) Error() string {
+func (ue errUnknownEncoder) Error() string {
 	return "format string specified unknown encoder " + string(ue)
 }
