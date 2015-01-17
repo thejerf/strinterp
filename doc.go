@@ -8,17 +8,18 @@ about 20 hours of screwing around. I meant to keep it shorter, but
 I started to have too much fun.
 
 "Morally" correct means that I intend this to demonstrate a point about
-API and language design, and that I don't necessarily intend this to
-have any other utility.
+API and language design, and that any actual utility is a bit
+coincidental.
 
-However, as I developed my ideas this turned into a potentially
-legitimately useful library, because instead of expressing all
+That said, as this developed it became potentially more useful than
+I had initially intended, because instead of expressing all
 the interpolations in terms of strings, they are all expressed in
 terms of io.Writers. Since this library also permits inputting
 the strings to be interpolated in the form of io.Readers, this means
 that this entire library is fully capable of string interpolation in
 the middle of streams, not just strings. Or, if you prefer, this is
-a *stream* interpolator.
+a *stream* interpolator. The "str" in "strinterp" is pleasingly
+ambiguous.
 
 This documentation focuses on usage; for the reasoning behind the
 design, consult the blog post.
@@ -32,10 +33,11 @@ To use this package, create an interpolator object:
 You can then use it to interpolate strings. The simplest case is
 concatenation:
 
-    concated, err := i.InterpStr("concated: %RAW;%RAW;", str1, str2)
+    concated, err := i.InterpStr("concatenated: %RAW;%RAW;", str1, str2)
 
 See the blog post for a discussion of why this is deliberately a bit
-heavyweight and *designed* to call attention to the use of "RAW".
+heavyweight and *designed* to call attention to the use of "RAW", rather
+than making such usage a simple and quiet default behavior.
 
 The "format string", the first element of the call, has the following
 syntax:
@@ -48,16 +50,17 @@ syntax:
 
 You may backslash-escape any of the pipe, colon, or semicolon to pass them
 through as arguments to the formatter/encoder, or backslash itself to pass
-it through. To emit a raw %, use "%%;".
+it through. (The formatter/encoder will of course receive the decoded
+bytes without the escaping backslash.) To emit a raw %, use "%%;".
 
 Here is an example of a format string that uses all these features:
 
-    result, err := i.InterpStr("copy and paste: %json:nohtml|base64:url;", obj)
+    result, err := i.InterpStr("copy and paste: %json|base64:url;", obj)
 
 This will result in the standard encoding/json encoding being used on the
-obj, then it will be converted to base64 using the encoding/base64
-URLEncoding specification. You can continue piping to further encoders
-indefinitely.
+obj, then it will be converted to base64, which will use the encoding/base64
+URLEncoding due to the "url" argument being passed. You can continue
+piping to further encoders indefinitely.
 
 There are two different kinds of interpolators you can write, formatters
 and encoders.
@@ -79,10 +82,13 @@ to warn a user about that.) It should then take the arg and write it
 out to the io.Writer in whatever manner makes sense, then return either
 the error obtained during writing or nil if it was fully successful.
 
-See the Formatter documentation below for more gritty details.
+You want to write a Formatter when you are trying to convert something
+that isn't already a string, []byte, or io.Reader into output.
+Therefore it only makes sense in the first element of a formatter's
+pipeline (the "json" in the previous example), because only a
+formatter can handle arbitrary objects.
 
-A formatter can only appear in the first position of a format
-specification.
+See the Formatter documentation below for more gritty details.
 
 Encoders
 
@@ -91,8 +97,13 @@ modifies them in a suitable manner, and passes them down to the next
 io.Writer in the chain. In other words it takes []byte and generates
 further []byte from them.
 
-See the Encoder documentation below for more gritty details. See
-examples.go for examples that the library ships with.
+You want to write an Encoder when either you want to transform input
+going through it (like escaping), or when you know the only valid
+input coming in will be in the form of a string, []byte, or io.Reader,
+which strinterp will automatically handle feeding down the encoder
+pipeline.
+
+See the Encoder documentation below for more gritty details.
 
 Configuring Your Interpolators
 
@@ -117,10 +128,22 @@ Once configured, for maximum utility I recommend putting string
 interpolation into your environment object. See
 http://www.jerf.org/iri/post/2929 .
 
+Direct Encoder Usage
+
+It is also possible to directly use the Encoders, as their type signature
+tends to imply (note how you don't have to pass them any *Interpolator
+or any other context). Ideally you instantiate a WriterStack around your
+target io.Writer and .Push encoders on top of that, as WriterStack handles
+some corner cases around Encoders that want to be "Close"d, then call
+.Finish() on the WriterStack when done, which DOES NOT close the
+underlying io.Writer. This is probably the maximally-performing way to
+do this sort of encoding in a stream.
+
 Security Note
 
 This is true of all string interpolators, but even more so of
-strinterp. You MUST NOT feed user input as the interpolation source
+strinterp since it can be hooked up to arbitrary formatters and
+encoders. You MUST NOT feed user input as the interpolation source
 string. In fact I'd suggest that one could make a good case that the first
 parameter to strinterp should always be a constant string in the source
 code base, and if I were going to write a local validation routine to plug
@@ -131,7 +154,7 @@ let users feed into the first parameter of fmt.Sprintf, or any other such
 string, in any language for that matter. It's possible some are "safe" to
 do that in, but given the wide range of havoc done over the years by
 letting users control interpolation strings, I would just recommend against
-it unconditionally.
+it unconditionally. Even when "safe" it probably isn't what you mean.
 
 Care should also be taken in the construction of filters. If they get much
 "smarter" than a for loop iterating over bytes/runes and doing "something" with
@@ -139,6 +162,12 @@ them, you're starting to ask for trouble if user input passes through
 them. Generally the entire point of strinterp is to handle potentially
 untrusted input in a safe manner, so if you start "interpreting" user input
 you could be creating openings for attackers.
+
+Contributing
+
+I'm interested in pull requests for more Formatters and Encoders for the
+"default Interpolator", though ideally only for things in the standard
+library.
 
 */
 package strinterp
