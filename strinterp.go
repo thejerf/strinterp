@@ -153,7 +153,7 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 
 		formatSpecs := splitHonoringEscaping(bytes.NewBuffer(rawFormat), '|')
 
-		writer := writerStack{w, []io.Writer{}}
+		writer := NewWriterStack(w)
 
 		// if there are encoders in the specification, we construct them
 		// backwards so as to properly modify the underlying writer.
@@ -163,7 +163,7 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 				return err
 			}
 
-			err = writer.push(encoder, formatArgs)
+			err = writer.Push(encoder, formatArgs)
 			if err != nil {
 				return err
 			}
@@ -199,7 +199,7 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 
 		if formatter != nil {
 			err = formatter(writer, thisArg, formatArgs)
-			err2 := writer.Close()
+			err2 := writer.Finish()
 			if err != nil {
 				return err
 			}
@@ -208,12 +208,12 @@ func (i *Interpolator) InterpWriter(w io.Writer, formatBytes []byte, args ...int
 			}
 		}
 		if encoder != nil {
-			err = writer.push(encoder, formatArgs)
+			err = writer.Push(encoder, formatArgs)
 			if err != nil {
 				return err
 			}
 			err = i.writeArgument(thisArg, writer)
-			err2 := writer.Close()
+			err2 := writer.Finish()
 			if err != nil {
 				return err
 			}
