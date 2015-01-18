@@ -20,6 +20,6 @@ this into a real library I won't complain.
 
 But even as just some musings meant for support of a blog post, I could not
 stand publishing this without the jerf-standard [full
-godoc](http://godoc.org/github.com/thejerf/suture), including examples,
+godoc](http://godoc.org/github.com/thejerf/strinterp), including examples,
 usage, and everything else you might otherwise expect this README.md to
 cover on GitHub, plus full test coverage and golint-cleanliness.
