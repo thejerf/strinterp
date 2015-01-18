@@ -3,9 +3,12 @@
 Package strinterp provides a demonstration of morally correct string
 interpolation.
 
-This package was created in support of a blog post. It's the result of
-about 20 hours of screwing around. I meant to keep it shorter, but
-I started to have too much fun.
+This package was created in support of a blog post about why we are still
+writing insecure software in 2015:
+http://www.jerf.org/iri/post/2942
+
+It's the result of about 20 hours of screwing around. I meant to keep
+it shorter, but I started to have too much fun.
 
 "Morally" correct means that I intend this to demonstrate a point about
 API and language design, and that any actual utility is a bit
