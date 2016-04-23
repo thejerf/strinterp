@@ -23,3 +23,15 @@ stand publishing this without the jerf-standard [full
 godoc](http://godoc.org/github.com/thejerf/strinterp), including examples,
 usage, and everything else you might otherwise expect this README.md to
 cover on GitHub, plus full test coverage and golint-cleanliness.
+
+Commit Signing
+==============
+
+Starting with the commit after d46cc8a8c2a22, I will be signing this repository
+with the ["jerf" keybase account](https://keybase.io/jerf). If you are viewing
+this repository through GitHub, you should see the commits as showing as
+"verified" in the commit view.
+
+(Bear in mind that due to the nature of how git commit signing works, there
+may be runs of unverified commits; what matters is that the top one is signed.)
+ 
